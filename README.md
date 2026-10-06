@@ -9,12 +9,19 @@ Troca os botões de minimizar, maximizar e fechar de todas as janelas do Windows
 - Arrastar a área vazia move a janela, duplo clique maximiza e o botão direito abre o menu do sistema
 - Respeita DPI por monitor, cantos arredondados do Windows 11, janelas "sempre visíveis" e áreas de trabalho virtuais
 
-## Como usar
+## Instalação
 
-```powershell
-dotnet publish -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o dist
-.\dist\TrafficLight.exe
-```
+1. Baixe o **`WindowsTrafficLight-Setup-x.y.z.exe`** em [Releases](https://github.com/PedroRuedas/Windows-TrafficLight/releases/latest).
+2. Execute o arquivo. Não precisa de administrador nem de .NET instalado.
+3. Pronto. As bolinhas aparecem em todas as janelas e o app passa a iniciar com o Windows (dá para desmarcar isso durante a instalação).
+
+O instalador ainda não tem assinatura digital, então o Windows SmartScreen pode avisar "O Windows protegeu o computador". Clique em **Mais informações → Executar assim mesmo**.
+
+Para desinstalar, use **Configurações → Aplicativos → Windows TrafficLight → Desinstalar**.
+
+Requisitos: Windows 10 1809 ou mais recente (64 bits). O visual foi pensado para o Windows 11.
+
+## Como usar
 
 Um ícone com três bolinhas aparece na bandeja:
 
@@ -24,6 +31,17 @@ Um ícone com três bolinhas aparece na bandeja:
 O app se registra sozinho para iniciar com o Windows. Se você desmarcar *Iniciar com o Windows*, essa escolha é respeitada. Se o `.exe` mudar de lugar, o registro é atualizado para o caminho novo na próxima vez que ele abrir.
 
 Requer o .NET 10 Desktop Runtime.
+
+## Compilar
+
+Requer o .NET 10 SDK e o [Inno Setup 6](https://jrsoftware.org/isinfo.php) (`winget install JRSoftware.InnoSetup`).
+
+```powershell
+.\build-installer.ps1              # usa a versão do TrafficLight.csproj
+.\build-installer.ps1 -Version 1.1.0
+```
+
+O instalador é gerado em `dist\installer\`. Para só rodar o app durante o desenvolvimento, use `dotnet run`.
 
 ## Como funciona
 
@@ -39,6 +57,8 @@ O Windows não permite trocar os botões de outros programas sem injetar código
 | `Overlay.cs` | Janela de sobreposição: thread, mouse e ações |
 | `TrafficLightRenderer.cs` | Desenho dos círculos e glifos |
 | `TrayApp.cs` | Ícone na bandeja e configurações (HKCU) |
+| `installer\TrafficLight.iss` | Script do instalador (Inno Setup) |
+| `build-installer.ps1` | Gera o executável autossuficiente e o instalador |
 
 ## Limitações
 

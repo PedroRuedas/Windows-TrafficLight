@@ -10,8 +10,12 @@
     <AssemblyName>TrafficLight</AssemblyName>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>assets\TrafficLight.ico</ApplicationIcon>
     <Version>1.0.0</Version>
     <Product>Windows TrafficLight</Product>
+    <Company>PedroRuedas</Company>
+    <Description>macOS-style traffic light window buttons for Windows</Description>
+    <Copyright>© 2026 PedroRuedas</Copyright>
   </PropertyGroup>
 
 </Project>
