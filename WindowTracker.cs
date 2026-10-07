@@ -16,7 +16,7 @@ internal sealed class WindowTracker : IDisposable
 
     /// <summary>Caption button position learned through WM_NCHITTEST, relative to the frame's top-right corner.</summary>
     private sealed record Probe(bool Maximized, uint Dpi, bool Found, int LeftFromRight, int Height,
-        bool HasMinimize, bool HasMaximize, long Time);
+        bool HasMinimize, bool HasMaximize, long Time, int Misses = 0);
 
     private static readonly OverlayState Hidden = new(false, default, Color.Empty, false, false, false, false, false, 0, 1, false);
 
@@ -317,18 +317,25 @@ internal sealed class WindowTracker : IDisposable
     private Probe? GetProbe(IntPtr hwnd, RECT frame, uint dpi, float scale, bool maximized)
     {
         probes.TryGetValue(hwnd, out var cached);
-        if (cached != null && cached.Maximized == maximized && cached.Dpi == dpi)
+        bool sameState = cached != null && cached.Maximized == maximized && cached.Dpi == dpi;
+        if (sameState)
         {
             // Positive results stay valid; negative ones are retried now and then
             // because apps often finish building their title bar after first showing.
-            if (cached.Found || Environment.TickCount64 - cached.Time < 5000) return cached;
+            // Windows that never answer (File Explorer, DWM-drawn buttons) are retried less and less often.
+            if (cached!.Found || Environment.TickCount64 - cached.Time < RetryDelay(cached.Misses)) return cached;
         }
         if (moving.Contains(hwnd)) return cached is { Found: true } ? cached : null;
 
         var probe = RunProbe(hwnd, frame, dpi, scale, maximized);
+        if (probe is { Found: false } && sameState && !cached!.Found)
+            probe = probe with { Misses = cached.Misses + 1 };
         if (probe != null) probes[hwnd] = probe;
         return probe;
     }
+
+    /// <summary>5 s, 10 s, 20 s, 40 s, then once a minute.</summary>
+    private static long RetryDelay(int misses) => Math.Min(5000L << Math.Min(misses, 4), 60_000);
 
     /// <summary>
     /// Asks the window itself where its caption buttons are, by hit-testing along the top of
@@ -340,17 +347,20 @@ internal sealed class WindowTracker : IDisposable
         long now = Environment.TickCount64;
         var notFound = new Probe(maximized, dpi, false, 0, 0, false, false, now);
 
+        // Every hit test is a cross-process round trip and buttons are dozens of pixels wide,
+        // so sample every few pixels and go pixel by pixel only to pin down the edges.
+        // The step is also the widest gap between two buttons that still counts as one group.
+        int step = Math.Max(3, (int)(4 * scale));
         int y = frame.Top + (int)(10 * scale);
         int scanLimit = Math.Max(frame.Left, frame.Right - (int)(320 * scale));
-        int slack = Math.Max(3, (int)(4 * scale));
 
         int left = int.MinValue, closeX = int.MinValue, miss = 0;
         bool hasMin = false, hasMax = false;
-        for (int x = frame.Right - 1; x > scanLimit; x--)
+        for (int x = frame.Right - 1; x > scanLimit; x -= step)
         {
             int ht = HitTest(hwnd, x, y);
             if (ht == int.MinValue) return null; // hung or timed out: try again later
-            if (ht is HTCLOSE or HTMAXBUTTON or HTMINBUTTON)
+            if (IsCaptionButton(ht))
             {
                 left = x;
                 miss = 0;
@@ -358,26 +368,56 @@ internal sealed class WindowTracker : IDisposable
                 hasMin |= ht == HTMINBUTTON;
                 hasMax |= ht == HTMAXBUTTON;
             }
-            else if (left != int.MinValue && ++miss > slack)
+            else if (left != int.MinValue && ++miss > 1)
             {
                 break;
             }
         }
         if (closeX == int.MinValue) return notFound;
 
+        // The real edges lie less than one step beyond the outermost hits.
+        for (int x = left - 1, stop = Math.Max(left - step, scanLimit); x > stop; x--)
+        {
+            int ht = HitTest(hwnd, x, y);
+            if (ht == int.MinValue) return null;
+            if (!IsCaptionButton(ht)) break;
+            left = x;
+            hasMin |= ht == HTMINBUTTON;
+            hasMax |= ht == HTMAXBUTTON;
+        }
+        for (int x = closeX + 1, stop = Math.Min(closeX + step, frame.Right); x < stop; x++)
+        {
+            int ht = HitTest(hwnd, x, y);
+            if (ht == int.MinValue) return null;
+            if (ht != HTCLOSE) break;
+            closeX = x;
+        }
+
         int probeX = closeX - (int)(12 * scale);
-        int bottom = int.MinValue;
-        for (int yy = frame.Top; yy < frame.Top + (int)(90 * scale); yy++)
+        int limit = frame.Top + (int)(90 * scale);
+        int lastHit = int.MinValue;
+        for (int yy = frame.Top; yy < limit; yy += step)
         {
             int ht = HitTest(hwnd, probeX, yy);
             if (ht == int.MinValue) return null;
-            if (ht == HTCLOSE) bottom = yy + 1;
-            else if (bottom != int.MinValue) break;
+            if (ht == HTCLOSE) lastHit = yy;
+            else if (lastHit != int.MinValue) break;
         }
-        if (bottom == int.MinValue) return notFound;
+        if (lastHit == int.MinValue) return notFound;
+
+        int bottom = lastHit + 1;
+        for (int yy = lastHit + 1, stop = Math.Min(lastHit + step, limit); yy < stop; yy++)
+        {
+            int ht = HitTest(hwnd, probeX, yy);
+            if (ht == int.MinValue) return null;
+            if (ht != HTCLOSE) break;
+            bottom = yy + 1;
+        }
 
         return new Probe(maximized, dpi, true, frame.Right - left, bottom - frame.Top, hasMin, hasMax, now);
     }
+
+    private static bool IsCaptionButton(int ht) => ht is HTCLOSE or HTMAXBUTTON or HTMINBUTTON;
 
     private static int HitTest(IntPtr hwnd, int x, int y)
     {
