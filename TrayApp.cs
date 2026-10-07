@@ -8,10 +8,15 @@ internal sealed class TrayApp : ApplicationContext
     private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string RunValue = "WindowsTrafficLight";
 
+    /// <summary>Title of the hidden window that a second instance and the installer talk to.</summary>
+    public const string ControlWindowName = "WindowsTrafficLight.Control";
+    public const int WM_APP_ACTIVATE = Native.WM_APP + 1;
+
     private readonly WindowTracker tracker = new();
     private readonly NotifyIcon tray;
     private readonly ToolStripMenuItem enabledItem;
     private readonly ToolStripMenuItem startupItem;
+    private readonly ControlWindow control;
 
     public TrayApp()
     {
@@ -43,6 +48,16 @@ internal sealed class TrayApp : ApplicationContext
         EnsureStartup();
         startupItem.Checked = IsStartupEnabled();
         SetEnabled(ReadEnabled());
+
+        control = new ControlWindow(this);
+    }
+
+    /// <summary>Another copy of the app was launched while this one runs.</summary>
+    private void OnActivateRequest()
+    {
+        if (!enabledItem.Checked) SetEnabled(true);
+        tray.ShowBalloonTip(3000, "Windows TrafficLight",
+            "Já está em execução. Clique no ícone das três bolinhas na bandeja para pausar.", ToolTipIcon.Info);
     }
 
     private static string StartupCommand => $"\"{Environment.ProcessPath}\"";
@@ -121,6 +136,38 @@ internal sealed class TrayApp : ApplicationContext
         tracker.Dispose();
         tray.Visible = false;
         tray.Dispose();
+        control.DestroyHandle(); // after the tray icon, so the installer sees it gone once we're done
         base.ExitThreadCore();
+    }
+
+    /// <summary>
+    /// Hidden top-level window with a known title. A second instance posts
+    /// <see cref="WM_APP_ACTIVATE"/> to it, and the installer posts WM_CLOSE so the app
+    /// can remove its tray icon before its files are replaced.
+    /// </summary>
+    private sealed class ControlWindow : NativeWindow
+    {
+        private const int WM_CLOSE = 0x0010;
+        private readonly TrayApp app;
+
+        public ControlWindow(TrayApp app)
+        {
+            this.app = app;
+            CreateHandle(new CreateParams { Caption = ControlWindowName });
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            switch (m.Msg)
+            {
+                case WM_APP_ACTIVATE:
+                    app.OnActivateRequest();
+                    return;
+                case WM_CLOSE:
+                    app.ExitThread();
+                    return;
+            }
+            base.WndProc(ref m);
+        }
     }
 }

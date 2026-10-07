@@ -30,7 +30,7 @@ Um ícone com três bolinhas aparece na bandeja:
 
 O app se registra sozinho para iniciar com o Windows. Se você desmarcar *Iniciar com o Windows*, essa escolha é respeitada. Se o `.exe` mudar de lugar, o registro é atualizado para o caminho novo na próxima vez que ele abrir.
 
-Requer o .NET 10 Desktop Runtime.
+Abrir o app de novo (pelo Menu Iniciar, por exemplo) enquanto ele já está rodando reativa as bolinhas, caso estejam pausadas, e mostra um aviso na bandeja.
 
 ## Compilar
 

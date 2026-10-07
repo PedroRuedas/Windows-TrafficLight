@@ -155,9 +155,12 @@ internal sealed class WindowTracker : IDisposable
     private void SyncAll(bool resampleAll)
     {
         var seen = new HashSet<IntPtr>();
+        var pids = new HashSet<uint>();
         EnumWindows((hwnd, _) =>
         {
             seen.Add(hwnd);
+            GetWindowThreadProcessId(hwnd, out uint pid);
+            pids.Add(pid);
             if (overlays.ContainsKey(hwnd) || IsWindowVisible(hwnd))
                 SyncWindow(hwnd, resampleAll || hwnd == foreground);
             return true;
@@ -167,6 +170,9 @@ internal sealed class WindowTracker : IDisposable
             Forget(hwnd);
         foreach (var hwnd in probes.Keys.Where(h => !seen.Contains(h)).ToList())
             probes.Remove(hwnd);
+        // PIDs get reused, so forget the elevation of processes that no longer own a window.
+        foreach (var pid in elevatedPids.Keys.Where(p => !pids.Contains(p)).ToList())
+            elevatedPids.Remove(pid);
     }
 
     private void Forget(IntPtr hwnd)

@@ -11,6 +11,8 @@
 #define RunKey "Software\Microsoft\Windows\CurrentVersion\Run"
 #define RunValue "WindowsTrafficLight"
 #define SettingsKey "Software\WindowsTrafficLight"
+; Must match TrayApp.ControlWindowName.
+#define ControlWindow "WindowsTrafficLight.Control"
 
 [Setup]
 AppId={{6F1C2B7E-3D4A-4E59-9B8F-7A2C5D1E0F43}
@@ -72,12 +74,25 @@ Root: HKCU; Subkey: "{#SettingsKey}"; Flags: uninsdeletekey
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchApp}"; Flags: nowait postinstall skipifsilent
 
 [Code]
-// The app lives in the tray and has no window to close, so stop it explicitly
-// before files are replaced or removed.
+// The app lives in the tray, so stop it explicitly before files are replaced or removed.
+// Ask it to close first so it removes its tray icon; force-kill whatever is left
+// (a hung instance, or a version older than the control window).
 procedure StopApp();
 var
-  ResultCode: Integer;
+  Wnd: HWND;
+  I, ResultCode: Integer;
 begin
+  Wnd := FindWindowByWindowName('{#ControlWindow}');
+  if Wnd <> 0 then
+  begin
+    PostMessage(Wnd, $0010 { WM_CLOSE }, 0, 0);
+    I := 0;
+    while (FindWindowByWindowName('{#ControlWindow}') <> 0) and (I < 30) do
+    begin
+      Sleep(100);
+      I := I + 1;
+    end;
+  end;
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM {#AppExe}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Sleep(300);
 end;
